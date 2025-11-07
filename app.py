@@ -18,7 +18,10 @@ app.logger.setLevel(logging.INFO)
 
 def get_redis():
     if not hasattr(g, 'redis'):
-        g.redis = Redis(host="redis", db=0, socket_timeout=5)
+        # Allow configuring Redis host/port via environment for local dev
+        redis_host = os.getenv('REDIS_HOST', 'localhost')
+        redis_port = int(os.getenv('REDIS_PORT', '6379'))
+        g.redis = Redis(host=redis_host, port=redis_port, db=0, socket_timeout=5)
     return g.redis
 
 @app.route("/", methods=['POST','GET'])
@@ -34,7 +37,11 @@ def hello():
         vote = request.form['vote']
         app.logger.info('Received vote for %s', vote)
         data = json.dumps({'voter_id': voter_id, 'vote': vote})
-        redis.rpush('votes', data)
+        try:
+            redis.rpush('votes', data)
+        except Exception:
+            # Don't crash the app if Redis is not available in local dev.
+            app.logger.exception('Failed to push vote to Redis; continuing without persisting vote')
 
     resp = make_response(render_template(
         'index.html',
@@ -48,4 +55,6 @@ def hello():
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=80, debug=True, threaded=True)
+    # Use PORT env var when provided (useful for local dev / containers). Default to 5000
+    port = int(os.getenv('PORT', '5000'))
+    app.run(host='0.0.0.0', port=port, debug=True, threaded=True)
